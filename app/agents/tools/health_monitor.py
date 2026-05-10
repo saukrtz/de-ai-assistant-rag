@@ -53,6 +53,7 @@ def get_recent_failures(hours: int = 24) -> list[dict]:
     Return all failed runs within the last `hours` hours.
     """
     _load_data()
+    hours = int(float(hours)) if hours is not None else 24   # Ollama may send "24.0"
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     return [
         r
@@ -94,6 +95,7 @@ def get_failure_rate(days: int = 7) -> dict:
     Returns dict: {pipeline_id: float (0–1)}.
     """
     _load_data()
+    days = int(float(days)) if days is not None else 7        # Ollama may send "7.0"
     cutoff = datetime.utcnow() - timedelta(days=days)
     totals: dict[str, int] = defaultdict(int)
     failures: dict[str, int] = defaultdict(int)

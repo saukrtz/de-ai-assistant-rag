@@ -23,8 +23,13 @@ class Settings(BaseSettings):
 
     # ── Groq / LLM ────────────────────────────────────────────────────────────
     # Field names must match env var names (case-insensitive)
-    groq_api_key: str
+    groq_api_key: str = "not-set"   # Optional when using Ollama
     groq_model: str = "llama-3.1-8b-instant"
+
+    # ── LLM Backend: 'groq' or 'ollama' ──────────────────────────────────────
+    llm_backend: str = "groq"               # switch to 'ollama' for local
+    ollama_base_url: str = "http://localhost:11434"  # default Ollama port
+    ollama_model: str = "llama3.1:8b"
 
     # ── Embeddings ─────────────────────────────────────────────────────────────
     embedding_model: str = "all-MiniLM-L6-v2"

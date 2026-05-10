@@ -22,6 +22,7 @@ Tool routing map:
 import json
 import logging
 from groq import Groq
+from openai import OpenAI   # Ollama uses OpenAI-compatible API
 
 from app.config import settings
 from app.agents.tools.pipeline_qa import pipeline_qa
@@ -41,7 +42,18 @@ from app.agents.tools.quality_checker import run_quality_check
 
 logger = logging.getLogger(__name__)
 
-_client = Groq(api_key=settings.groq_api_key)
+# ── LLM client factory (Groq or Ollama) ──────────────────────────────────────
+def _make_client():
+    if settings.llm_backend == "ollama":
+        # Ollama exposes OpenAI-compatible API — no auth needed
+        return OpenAI(
+            base_url=f"{settings.ollama_base_url}/v1",
+            api_key="ollama",   # required by openai SDK but ignored by Ollama
+        ), settings.ollama_model
+    else:
+        return Groq(api_key=settings.groq_api_key), settings.groq_model
+
+_client, _model = _make_client()
 
 SYSTEM_PROMPT = """You are a senior Data Engineering Assistant.
 You have access to the following tools to help answer questions:
@@ -186,13 +198,24 @@ class Orchestrator:
         """
         self.history.append({"role": "user", "content": user_message})
 
+        # ── Trim history: Ollama = 20 turns (local, unlimited); Groq = 6 turns (rate-limited)
+        system_msg = self.history[0]
+        recent = self.history[1:]
+        max_turns = 40 if settings.llm_backend == "ollama" else 12  # messages not turns
+        if len(recent) > max_turns:
+            recent = recent[-max_turns:]
+        trimmed_history = [system_msg] + recent
+
+        # Ollama local = no rate limits; Groq = keep tokens small
+        max_tok = 2048 if settings.llm_backend == "ollama" else 512
+
         response = _client.chat.completions.create(
-            model=settings.groq_model,
-            messages=self.history,
+            model=_model,
+            messages=trimmed_history,
             tools=TOOLS,
             tool_choice="auto",
             temperature=0.3,
-            max_tokens=2048,
+            max_tokens=max_tok,
         )
 
         msg = response.choices[0].message
@@ -230,11 +253,18 @@ class Orchestrator:
                 }
             )
 
+            # Re-trim after appending tool result
+            recent2 = self.history[1:]
+            max_turns2 = 42 if settings.llm_backend == "ollama" else 14
+            if len(recent2) > max_turns2:
+                recent2 = recent2[-max_turns2:]
+            trimmed2 = [self.history[0]] + recent2
+
             final = _client.chat.completions.create(
-                model=settings.groq_model,
-                messages=self.history,
+                model=_model,
+                messages=trimmed2,
                 temperature=0.3,
-                max_tokens=2048,
+                max_tokens=max_tok,
             )
             final_content = final.choices[0].message.content.strip()
             self.history.append({"role": "assistant", "content": final_content})
