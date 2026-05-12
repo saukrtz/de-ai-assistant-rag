@@ -31,6 +31,7 @@ from app.agents.tools.catalog_explorer import (
     get_lineage,
     get_pii_tables,
     get_table_by_name,
+    get_all_tables,
 )
 from app.agents.tools.health_monitor import (
     get_pipeline_status,
@@ -55,20 +56,46 @@ def _make_client():
 
 _client, _model = _make_client()
 
-SYSTEM_PROMPT = """You are a senior Data Engineering Assistant.
-You have access to the following tools to help answer questions:
+def _build_system_prompt() -> str:
+    """Dynamically inject the current data pipeline map into the system prompt."""
+    try:
+        from app.agents.tools.catalog_explorer import get_all_tables
+        tables = get_all_tables()
+        map_lines = []
+        for t in tables:
+            layer = t.get("layer", "UNKNOWN").upper()
+            name = t.get("name", "unknown")
+            map_lines.append(f"  - {layer}: {name}")
+        pipeline_map = "\n".join(map_lines)
+    except Exception as e:
+        logger.error(f"Failed to load pipeline map: {e}")
+        pipeline_map = "  - (Catalogue map currently unavailable)"
 
-- pipeline_qa: Answer questions about pipeline documentation and code.
-- search_tables: Find tables by name, column, PII tag, or owner.
-- get_lineage: Show upstream/downstream table lineage.
-- get_pii_tables: List all tables containing PII data.
-- get_pipeline_status: Show current pipeline run statuses.
-- get_recent_failures: Show pipelines that failed recently.
-- calculate_slo_adherence: Show SLO compliance per pipeline.
-- run_quality_check: Trigger an on-demand data quality scan for a table.
+    return f"""You are a senior Data Engineering Assistant.
+You MUST always call a tool to answer questions. Never answer from memory alone.
 
-Use the tools to provide accurate, grounded answers.
-Always explain which tool you used and why."""
+PIPELINE MAP CONTEXT (Use this to understand the environment):
+{pipeline_map}
+
+Use these tools:
+- pipeline_qa: Questions about pipeline docs, retry logic, architecture, runbooks.
+- get_all_tables: List ALL tables. Use this when asked to show/list/describe all tables.
+- search_tables: Search tables by keyword (name, column, owner). Use for specific searches.
+- get_lineage: Show upstream/downstream lineage for a specific table.
+- get_pii_tables: List tables with PII columns.
+- get_pipeline_status: Current pipeline run statuses.
+- get_recent_failures: Pipelines that failed in the last N hours.
+- calculate_slo_adherence: SLO compliance per pipeline.
+- run_quality_check: On-demand data quality scan for a table.
+
+RULES:
+- If asked to list or show all tables → always call get_all_tables.
+- If asked about a specific table → call search_tables with the table name.
+- Always call a tool. Do NOT output raw JSON or tool names as text.
+- After receiving tool data, you MUST synthesize and format it into a clear, helpful answer for the user. Do NOT just say "The tool used was X".
+- Briefly cite which tool you used in your response."""
+
+SYSTEM_PROMPT = _build_system_prompt()
 
 # ── Tool definitions for Groq function-calling ────────────────────────────────
 TOOLS = [
@@ -112,6 +139,22 @@ TOOLS = [
                     "direction": {"type": "string", "enum": ["upstream", "downstream", "both"]},
                 },
                 "required": ["table_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_all_tables",
+            "description": "List ALL tables across every layer (bronze, silver, gold, meta). Use this when asked to show or list all tables.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "layer": {
+                        "type": "string",
+                        "description": "Optional filter for a specific layer (e.g., 'bronze', 'silver', 'gold')",
+                    }
+                },
             },
         },
     },
@@ -172,6 +215,7 @@ TOOLS = [
 _TOOL_MAP = {
     "pipeline_qa": pipeline_qa,
     "search_tables": search_tables,
+    "get_all_tables": get_all_tables,
     "get_lineage": get_lineage,
     "get_pii_tables": get_pii_tables,
     "get_pipeline_status": get_pipeline_status,
@@ -207,7 +251,7 @@ class Orchestrator:
         trimmed_history = [system_msg] + recent
 
         # Ollama local = no rate limits; Groq = keep tokens small
-        max_tok = 2048 if settings.llm_backend == "ollama" else 512
+        max_tok = 1024 if settings.llm_backend == "ollama" else 512
 
         response = _client.chat.completions.create(
             model=_model,

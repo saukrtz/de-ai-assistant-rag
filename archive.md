@@ -446,3 +446,24 @@ uvicorn app.mcp.server:app --host 0.0.0.0 --port 8080
 
 *Built for GenAI for Data Engineers Bootcamp — Capstone Project*
 *LLM: llama-3.1-8b-instant | Vector DB: ChromaDB | UI: Streamlit*
+
+### Iteration 7: Advanced RAG, UI Upgrade, and Context Injection
+**Date:** 2026-05-11
+**Status:** Completed
+**Step Description:**
+Upgraded the core retrieval architecture to Hybrid Corrective RAG, overhauled the Streamlit UI, and implemented Zero-Shot Context Injection to eliminate LLM tool-calling hallucinations.
+
+**Decisions:**
+1. **Corrective RAG (CRAG):** Implemented a multi-stage retrieval pipeline. Chunks are retrieved via Hybrid search (Dense ChromaDB + Sparse BM25 via Reciprocal Rank Fusion), graded by the LLM for relevance (RELEVANT/AMBIGUOUS/IRRELEVANT), and triggers an automatic query-rewrite fallback if no relevant docs are found.
+2. **UI Modernization:** Swapped the basic chat interface for `streamlit_app657.py`, which includes dedicated tabs for Chat, Pipeline Operations, Data Catalogue, Quality Checks, and Monitoring. Built adapter shims to bridge the new UI to existing backend tools.
+3. **Context Pre-Loading (Pipeline Map):** Injected a dynamic summary of the data catalogue directly into the Orchestrator's `SYSTEM_PROMPT`. By loading the pipeline map into the model's context window before it answers, the model deterministically knows exactly which tables exist in which layers, drastically reducing hallucinated arguments.
+4. **Tool Robustness:** Modified `search_tables` to fallback to listing all tables on generic queries (e.g., "pipeline", "all"), and updated `get_all_tables` to accept an optional `layer` parameter.
+
+**Action Taken:**
+- Added `rank-bm25` to `requirements.txt`.
+- Created `app/rag/bm25_retriever.py`, `hybrid_retriever.py`, `grader.py`, and `corrective_rag.py`.
+- Replaced `app/main.py` with the new tabbed UI, backing up the original to `app/main_v1_backup.py`.
+- Updated `app/agents/orchestrator.py` with the dynamic `_build_system_prompt()` logic.
+
+**Next Steps:**
+- Commit all changes and push to the GitHub repository to conclude the capstone deployment.
