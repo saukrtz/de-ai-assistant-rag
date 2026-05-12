@@ -24,29 +24,25 @@ DE-AI Assistant is a conversational AI that helps data engineers with their dail
 ## 🏗️ Architecture
 
 ```
-User (Streamlit Chat)
+User (Streamlit Multi-Tab Dashboard)
         │
         ▼
 ┌─────────────────────────┐
-│  Orchestrator            │  ← LangChain-style agent with Groq tool-calling
+│  Orchestrator            │  ← Zero-Shot Context Injection (Pipeline Map)
 │  (app/agents/orchestrator)│
 └─────────────────────────┘
         │ routes to
    ┌────┼────────────────────────────┐
    ▼    ▼             ▼              ▼
 Pipeline Q&A  Catalogue Explorer  Health Monitor  Quality Checker
-(RAG + Groq)  (JSON search)       (JSON metrics)  (Agentic action)
-   │                                               │
-   ▼                                               ▼
-ChromaDB                                      Groq LLM
-(Vector Store)                             (Quality summary)
+(Hybrid CRAG) (JSON search)       (JSON metrics)  (Agentic action)
    │
    ▼
-Sentence-Transformers
-(Embeddings)
-   │
-   ▼
-data/pipeline_docs/  ← Markdown knowledge base
+Corrective RAG Pipeline (CRAG)
+ ├── 1. Dense Search (ChromaDB + Sentence Transformers)
+ ├── 2. Sparse Search (BM25)
+ ├── 3. Reciprocal Rank Fusion (RRF)
+ └── 4. LLM Relevance Grader (Auto-Query Rewrite Fallback)
 ```
 
 ---
@@ -99,23 +95,29 @@ uvicorn app.mcp.server:app --host 0.0.0.0 --port 8080
 de-ai-assistant/
 ├── app/
 │   ├── config.py              # Pydantic settings (reads .env)
-│   ├── main.py                # Streamlit entry point
+│   ├── main.py                # Streamlit entry point (delegates to UI)
+│   ├── main_v1_backup.py      # Original simple chat UI backup
 │   ├── agents/
-│   │   ├── orchestrator.py    # Groq tool-calling orchestrator
-│   │   └── tools/
-│   │       ├── pipeline_qa.py     # RAG Q&A tool
-│   │       ├── catalog_explorer.py # Data catalogue tool
-│   │       ├── health_monitor.py  # Pipeline health tool
-│   │       └── quality_checker.py # Agentic quality check
+│   │   ├── orchestrator.py    # Tool-calling orchestrator with Context Map
+│   │   ├── quality_agent.py   # Quality service adapter
+│   │   └── tools/             # Core LLM tools (health, lineage, QA)
+│   ├── catalogue/             # Data catalogue UI shims
+│   ├── pipeline/              # Pipeline operations UI shims
+│   ├── services/              # Chat service UI shims
+│   ├── observability/         # Lightweight metrics stub
 │   ├── rag/
 │   │   ├── vectorstore.py     # ChromaDB setup
 │   │   ├── ingestion.py       # Document → chunk → embed → store
-│   │   └── retriever.py       # Hybrid vector + keyword retrieval
+│   │   ├── bm25_retriever.py  # BM25 sparse indexer
+│   │   ├── hybrid_retriever.py# Dense + Sparse Reciprocal Rank Fusion
+│   │   ├── grader.py          # Relevance grader
+│   │   └── corrective_rag.py  # Full CRAG pipeline with query rewrite
 │   ├── mcp/
 │   │   └── server.py          # FastAPI MCP-compatible server
 │   └── ui/
-│       ├── components.py      # Health cards, lineage graphs, etc.
-│       └── styles.py          # Dark theme CSS
+│       ├── streamlit_app657.py# Modern multi-tabbed Streamlit UI
+│       ├── components.py      # UI elements
+│       └── styles.py          # Custom CSS
 ├── data/
 │   ├── pipeline_docs/         # RAG knowledge base (Markdown)
 │   ├── catalogue/             # tables.json + lineage.json
@@ -153,8 +155,8 @@ python -m pytest tests/test_health.py -v
 | Agent Orchestration | LangChain tool-calling | Day 11 |
 | Vector DB | ChromaDB | Day 4 |
 | Embeddings | sentence-transformers/all-MiniLM-L6-v2 | Day 4 |
-| RAG Pipeline | Hybrid vector + keyword | Day 4 |
-| Frontend | Streamlit | Day 10 |
+| RAG Pipeline | Hybrid CRAG (Dense + BM25 + Reciprocal Rank Fusion + Auto-Rewrite) | Day 4, 11 |
+| Frontend | Streamlit Multi-Tab Dashboard | Day 10 |
 | MCP Server | FastAPI | Day 5 |
 | Data Quality | Agentic quality checks | Day 12 |
 | Configuration | Pydantic Settings | Day 7 |
