@@ -51,7 +51,7 @@ Corrective RAG Pipeline (CRAG)
 
 ### 1. Clone & Enter Project
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/saukrtz/ai-risk-analysis-banking-suite.git
 cd de-ai-assistant
 ```
 
